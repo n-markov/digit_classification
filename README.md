@@ -50,6 +50,32 @@ point of the exercise.
 | kagglehub | 22 MB | 105 MB | 5 | ~6 lines |
 | Hugging Face parquet | 15.6 MB | 16 MB | 2 | PNG decode per row |
 
+## Results
+
+A 784 to 128 to 10 network, ReLU and softmax, trained for 20 epochs on 55,000 images
+in batches of 128.
+
+| | |
+| --- | --- |
+| test accuracy | 97.73% |
+| test loss | 0.0782 |
+| errors | 227 of 10,000 |
+| learning rate | 0.02, momentum 0.9, no decay |
+| training time | roughly 4 minutes on CPU |
+
+Both sanity checks pass before training starts: the network memorises 100 examples
+completely, and every probed gradient agrees with a finite-difference estimate to
+within 3.5e-07.
+
+Two findings from the hyperparameter sweep are baked into the notebook's commentary.
+Learning rates at or above 0.1 diverge to chance, because momentum at 0.9 multiplies
+the effective step roughly tenfold. And decay, once scaled to the fact that it applies
+per update rather than per epoch, made no difference worth having over a run this
+short, so it ships implemented but switched off.
+
+The most common confusion by a wide margin is a 9 read as a 4, at 25 of the 227
+errors. Sorting the mistakes by confidence surfaces mostly ambiguous handwriting.
+
 ## Setup
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
@@ -68,8 +94,12 @@ uv run jupyter lab
 - [x] Backpropagation (manual and combined Softmax/CCE)
 - [x] Training loop / optimizer (plain SGD)
 - [x] Real MNIST data downloaded, verified and preprocessed
-- [ ] Sanity checks: overfit a tiny subset, numeric gradient check
-- [ ] He initialisation and mini-batching
-- [ ] Learning rate decay / momentum
-- [ ] Train and evaluate on MNIST
-- [ ] Confusion matrix and worst misclassifications
+- [x] He initialisation, as a `LayerDense(..., init="he")` option
+- [x] Sanity checks: overfits 100 examples, backprop agrees with finite differences
+- [x] Mini-batching with a per-epoch shuffle
+- [x] Learning rate decay and momentum, as `OptimizerSGD` options
+- [x] Trained and evaluated on MNIST: **97.7% test accuracy**
+- [x] Confusion matrix and worst misclassifications
+- [ ] L2 regularisation and dropout
+- [ ] Adam, for comparison against momentum
+- [ ] A convolutional layer
