@@ -10,9 +10,26 @@ import numpy as np
 
 
 class LayerDense:
-    def __init__(self, n_inputs, n_neurons) -> None:
-        self.weights = 0.1 * np.random.randn(n_inputs, n_neurons)  # Pre transposed
-        self.biases = np.zeros((1, n_neurons))
+    """A fully connected layer.
+
+    `init="fixed"` is the flat 0.1 scaling used throughout notebook 01, kept as the
+    default so that notebook still reproduces. `init="he"` scales by the fan-in
+    instead, which is what keeps pre-activations from blowing up once the input is
+    784 pixels wide rather than 2 spiral coordinates.
+    """
+
+    def __init__(self, n_inputs, n_neurons, init="fixed", dtype=np.float64) -> None:
+        scales = {
+            "fixed": 0.1,
+            "he": np.sqrt(2.0 / n_inputs),
+        }
+
+        if init not in scales:
+            raise ValueError(f"unknown init {init!r}, expected one of {sorted(scales)}")
+
+        # Pre transposed
+        self.weights = (scales[init] * np.random.randn(n_inputs, n_neurons)).astype(dtype)
+        self.biases = np.zeros((1, n_neurons), dtype=dtype)
 
     def forward(self, inputs):
         self.inputs = inputs
@@ -119,9 +136,55 @@ class ActivationSoftmaxLossCategoricalCrossentropy:
 
 
 class OptimizerSGD:
-    def __init__(self, learning_rate=1.0) -> None:
+    """Stochastic gradient descent, optionally with decay and momentum.
+
+    Both extras default to off, so calling this with a learning rate alone behaves
+    exactly as it did in notebook 01. With them on, wrap each step:
+
+        optimizer.pre_update_params()
+        optimizer.update_params(layer)   # once per layer
+        optimizer.post_update_params()
+
+    Decay shrinks the learning rate as 1 / (1 + decay * iterations), taking large
+    steps early and fine ones later. Momentum carries a fraction of the previous
+    update into the current one, which damps the zig-zag across narrow valleys and
+    builds speed along directions the gradient keeps agreeing on.
+    """
+
+    def __init__(self, learning_rate=1.0, decay=0.0, momentum=0.0) -> None:
         self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.momentum = momentum
+        self.iterations = 0
+
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate / (1 + self.decay * self.iterations)
 
     def update_params(self, layer):
-        layer.weights += -self.learning_rate * layer.dweights
-        layer.biases += -self.learning_rate * layer.dbiases
+        if self.momentum:
+            if not hasattr(layer, "weight_momentums"):
+                layer.weight_momentums = np.zeros_like(layer.weights)
+                layer.bias_momentums = np.zeros_like(layer.biases)
+
+            weight_updates = (
+                self.momentum * layer.weight_momentums
+                - self.current_learning_rate * layer.dweights
+            )
+            bias_updates = (
+                self.momentum * layer.bias_momentums
+                - self.current_learning_rate * layer.dbiases
+            )
+
+            layer.weight_momentums = weight_updates
+            layer.bias_momentums = bias_updates
+        else:
+            weight_updates = -self.current_learning_rate * layer.dweights
+            bias_updates = -self.current_learning_rate * layer.dbiases
+
+        layer.weights += weight_updates
+        layer.biases += bias_updates
+
+    def post_update_params(self):
+        self.iterations += 1
